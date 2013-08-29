@@ -515,6 +515,7 @@ class Options:
         self.listener = False
         self.nolaunch = False
         self.output = None
+        self.page = 0
         self.password = None
         self.pipe = None
         self.port = '2002'
@@ -523,15 +524,16 @@ class Options:
         self.stdout = False
         self.template = None
         self.timeout = 6
+        self.trim = False
         self.verbose = 0
 
         ### Get options from the commandline
         try:
-            opts, args = getopt.getopt (args, 'c:Dd:e:f:hi:Llo:np:s:T:t:vV',
+            opts, args = getopt.getopt (args, 'c:Dd:e:f:hi:Llo:np:P:s:T:t:vV',
                 ['connection=', 'debug', 'doctype=', 'export=', 'format=',
                  'help', 'import', 'listener', 'no-launch', 'output=',
-                 'outputpath', 'password=', 'pipe=', 'port=', 'server=',
-                 'timeout=', 'show', 'stdout', 'template', 'verbose',
+                 'outputpath', 'page', 'password=', 'pipe=', 'port=', 'server=',
+                 'timeout=', 'show', 'stdout', 'template', 'trim', 'verbose',
                  'version'] )
         except getopt.error as exc:
             print('unoconv: %s, try unoconv -h for a list of all the options' % str(exc))
@@ -594,6 +596,8 @@ class Options:
             elif opt in ['--outputpath']:
                 print('Warning: This option is deprecated by --output.', file=sys.stderr)
                 self.output = arg
+            elif opt in ['-P', '--page']:
+                self.page = int(arg)
             elif opt in ['--password']:
                 self.password = arg
             elif opt in ['--pipe']:
@@ -610,6 +614,8 @@ class Options:
                 self.template = arg
             elif opt in ['-T', '--timeout']:
                 self.timeout = int(arg)
+            elif opt in ['--trim']:
+                self.trim = True
             elif opt in ['-v', '--verbose']:
                 self.verbose = self.verbose + 1
             elif opt in ['-V', '--version']:
@@ -693,6 +699,7 @@ unoconv options:
       --pipe=name          alternative method of connection using a pipe
   -p, --port=port          specify the port (default: 2002)
                              to be used by client or listener
+  -P  --page               specify Draw document page
       --password=string    provide a password to decrypt the document
   -s, --server=server      specify the server address (default: 127.0.0.1)
                              to be used by client or listener
@@ -700,6 +707,7 @@ unoconv options:
       --stdout             write output to stdout
   -t, --template=file      import the styles from template (.ott)
   -T, --timeout=secs       timeout after secs if connection to listener fails
+      --trim               trim white space(Draw)
   -v, --verbose            be more and more verbose (-vvv for debugging)
 ''', file=sys.stderr)
 
@@ -888,6 +896,45 @@ class Convertor:
             info(1, "Selected output format: %s" % outputfmt)
             info(2, "Selected office filter: %s" % outputfmt.filter)
             info(2, "Used doctype: %s" % outputfmt.doctype)
+
+            from com.sun.star.awt import Point
+
+            # specify page num
+            if op.page > 0:
+                drawPages = document.getDrawPages()
+                for i in range(0, op.page-1):
+                    drawPage0 = drawPages.getByIndex(0)
+                    drawPages.remove(drawPage0)
+
+            # trim white space in Draw
+            if op.trim:
+                drawPage0 = document.getDrawPages().getByIndex(0)
+                # calc draw bounds
+                minX = drawPage0.Width
+                maxX = 0
+                minY = drawPage0.Height
+                maxY = 0
+
+                for i in range(0, drawPage0.getCount()):
+                    shape = drawPage0.getByIndex(i)
+                    minX = min(shape.getPosition().X, minX)
+                    maxX = max(shape.getPosition().X + shape.getSize().Width, maxX)
+                    minY = min(shape.getPosition().Y, minY)
+                    maxY = max(shape.getPosition().Y + shape.getSize().Height, maxY)
+
+                # set draw bounds
+                drawPage0.BorderBottom = 0
+                drawPage0.BorderLeft = 0
+                drawPage0.BorderRight = 0
+                drawPage0.BorderTop = 0
+                drawPage0.Width = maxX - minX + 20
+                drawPage0.Height = maxY - minY + 20
+
+                # move shapes
+                for i in range(0, drawPage0.getCount()):
+                    shape = drawPage0.getByIndex(i)
+                    pos = shape.getPosition()
+                    shape.setPosition(Point(pos.X - minX + 10, pos.Y - minY + 10))
 
             ### Export phase
             phase = "export"
